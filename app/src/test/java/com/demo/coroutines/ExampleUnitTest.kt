@@ -1,6 +1,7 @@
 package com.demo.coroutines
 
 import org.junit.Test
+import java.util.concurrent.Executors
 import kotlin.coroutines.experimental.AbstractCoroutineContextElement
 import kotlin.coroutines.experimental.Continuation
 import kotlin.coroutines.experimental.CoroutineContext
@@ -32,10 +33,13 @@ class ExampleUnitTest {
       //暂停我们的线程，并开始执行一段耗时操作
       val result: String = suspendCoroutine { continuation ->
         println("in suspend block.")
-        continuation.resume(calcMd5(continuation.context[FilePath]!!.path))
-        println("after resume.")
+        executor.submit {
+          continuation.resume(calcMd5(continuation.context[FilePath]!!.path))
+          println("after resume.")
+        }
       }
       println("in coroutine. After suspend. result = $result")
+      executor.shutdown()
     }
     println("after coroutine")
   }
@@ -68,5 +72,9 @@ class ExampleUnitTest {
     Thread.sleep(1000)
     //假设这就是我们计算得到的 MD5 值
     return System.currentTimeMillis().toString()
+  }
+
+  private val executor = Executors.newSingleThreadExecutor {
+    Thread(it, "Executors")
   }
 }
