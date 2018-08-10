@@ -1,12 +1,11 @@
 package com.demo.coroutines
 
+import kotlinx.coroutines.experimental.async
+import kotlinx.coroutines.experimental.channels.Channel
+import kotlinx.coroutines.experimental.delay
+import kotlinx.coroutines.experimental.launch
+import kotlinx.coroutines.experimental.runBlocking
 import org.junit.Test
-import java.util.concurrent.Executors
-import kotlin.coroutines.experimental.AbstractCoroutineContextElement
-import kotlin.coroutines.experimental.Continuation
-import kotlin.coroutines.experimental.CoroutineContext
-import kotlin.coroutines.experimental.startCoroutine
-import kotlin.coroutines.experimental.suspendCoroutine
 
 /**
  * Example local unit test, which will execute on the development machine (host).
@@ -14,67 +13,31 @@ import kotlin.coroutines.experimental.suspendCoroutine
  * See [testing documentation](http://d.android.com/tools/testing).
  */
 class ExampleUnitTest {
+  @Test
+  fun testAwait() {
+    runBlocking {
+      val s = async { doSomething() }
+      print("I will got thw result ${s.await()}") // 因为await会挂起 所以要泡在runBlocking里
+    }
+  }
 
-  /*
-  * before coroutine
-  * in coroutine. Before suspend.
-  * in suspend block.
-  * calc md5 for test.zip.after resume.
-  * in coroutine. After suspend. result = 1533809382538
-  * resume kotlin.Unitafter coroutine
-  **/
+  suspend fun doSomething(): String {
+    delay(1000)
+    return "Result"
+  }
 
   @Test
-  fun testSuspend() {
-    println("before coroutine")
-    //启动我们的协程
-    asyncCalcMd5("test.zip") {
-      println("in coroutine. Before suspend.")
-      //暂停我们的线程，并开始执行一段耗时操作
-      val result: String = suspendCoroutine { continuation ->
-        println("in suspend block.")
-        executor.submit {
-          continuation.resume(calcMd5(continuation.context[FilePath]!!.path))
-          println("after resume.")
-        }
+  fun testChannel() {
+    runBlocking {
+      val channel = Channel<Int>()
+      launch {
+        for (x in 0..5) channel.send(x)
+        channel.close()
       }
-      println("in coroutine. After suspend. result = $result")
-      executor.shutdown()
+
+      for (x in 0..5) {
+        println(channel.receive())
+      }
     }
-    println("after coroutine")
-  }
-
-  // CoroutineContext 自定义上下文
-  class FilePath(val path: String) : AbstractCoroutineContextElement(FilePath) {
-    companion object Key : CoroutineContext.Key<FilePath>
-  }
-
-  fun asyncCalcMd5(path: String, block: suspend () -> Unit) {
-    val continuation = object : Continuation<Unit> {
-      override fun resumeWithException(exception: Throwable) {
-        print(exception.localizedMessage)
-      }
-
-      override fun resume(value: Unit) {
-        print("resume $value")
-      }
-
-      override val context: CoroutineContext
-        get() = FilePath(path)
-    }
-    block.startCoroutine(continuation)
-  }
-
-  // 耗时函数
-  fun calcMd5(path: String): String {
-    print("calc md5 for $path.")
-    //暂时用这个模拟耗时
-    Thread.sleep(1000)
-    //假设这就是我们计算得到的 MD5 值
-    return System.currentTimeMillis().toString()
-  }
-
-  private val executor = Executors.newSingleThreadExecutor {
-    Thread(it, "Executors")
   }
 }
