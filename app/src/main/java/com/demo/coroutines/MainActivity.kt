@@ -2,11 +2,13 @@ package com.demo.coroutines
 
 import android.os.Bundle
 import android.os.Looper
+import android.util.Log
 import androidx.appcompat.app.AppCompatActivity
 import kotlinx.android.synthetic.main.activity_main.bn1
 import kotlinx.android.synthetic.main.activity_main.bn2
 import kotlinx.android.synthetic.main.activity_main.bn3
 import kotlinx.android.synthetic.main.activity_main.bn4
+import kotlinx.android.synthetic.main.activity_main.bn5
 import kotlinx.coroutines.experimental.CommonPool
 import kotlinx.coroutines.experimental.CoroutineStart.ATOMIC
 import kotlinx.coroutines.experimental.CoroutineStart.LAZY
@@ -15,6 +17,11 @@ import kotlinx.coroutines.experimental.android.UI
 import kotlinx.coroutines.experimental.async
 import kotlinx.coroutines.experimental.launch
 import kotlinx.coroutines.experimental.withContext
+import kotlin.coroutines.experimental.AbstractCoroutineContextElement
+import kotlin.coroutines.experimental.Continuation
+import kotlin.coroutines.experimental.CoroutineContext
+import kotlin.coroutines.experimental.startCoroutine
+import kotlin.coroutines.experimental.suspendCoroutine
 
 class MainActivity : AppCompatActivity() {
 
@@ -32,6 +39,9 @@ class MainActivity : AppCompatActivity() {
     }
     bn4.setOnClickListener {
       testWithContext()
+    }
+    bn5.setOnClickListener {
+      source()
     }
   }
 
@@ -85,5 +95,47 @@ class MainActivity : AppCompatActivity() {
       println("job end")
     }
 
+  }
+  // 自定义一个CoroutineContext
+  class ParamContext(val par: String) : AbstractCoroutineContextElement(ParamContext) {
+    companion object Key : CoroutineContext.Key<ParamContext>
+  }
+  // 创建一个Continuation并运行
+  private fun createContinuation(param: String, block: suspend () -> Unit) {
+    val continuation = object : Continuation<Unit> {
+      override val context: CoroutineContext
+        get() = ParamContext(param)
+      // 运行后调用
+      override fun resume(value: Unit) {
+        Log.d("TAG", "value:$value param:${context[ParamContext]!!.par}")
+      }
+      // 运行出错调用
+      override fun resumeWithException(exception: Throwable) {
+        Log.d("TAG", exception.message)
+      }
+    }
+    block.startCoroutine(continuation)
+  }
+
+  private fun source() {
+    Log.d("TAG", "before continuation")
+    createContinuation("it's param", {
+      Log.d("TAG", "before suspend")
+      // 支持一个挂起函数
+      val result: String = suspendCoroutine { continuation ->
+        // 运行耗时函数
+        continuation.resume(calcDoSomething())
+      }
+      Log.d("TAG","after suspend")
+      Log.d("TAG", "result:$result")
+    })
+    Log.d("TAG", "after continuation")
+  }
+
+  // 模拟一个耗时函数
+  private fun calcDoSomething(): String {
+    Thread.sleep(1000)
+    Log.d("TAG", "do something")
+    return "result"
   }
 }
