@@ -104,31 +104,9 @@ class MainActivity : AppCompatActivity() {
     companion object Key : CoroutineContext.Key<ParamContext>
   }
 
-  // 创建一个Continuation并运行
-  private fun createContinuation(param: String, block: suspend () -> Unit) {
-    val continuation = object : Continuation<Unit> {
-      override val context: CoroutineContext
-        // 上下文通过+组合
-        get() = ParamContext(param) + MyCommonPool
-
-      // 运行后调用
-      override fun resume(value: Unit) {
-        log("${Thread.currentThread().name} value:$value param:${context[ParamContext]!!.par}")
-      }
-
-      // 运行出错调用
-      override fun resumeWithException(exception: Throwable) {
-        log(exception.message)
-      }
-    }
-
-    block.startCoroutine(continuation)
-
-  }
-
   private fun source() {
     log("${Thread.currentThread().name} before continuation")
-    createContinuation("it's param", {
+    myLaunch(ParamContext("it's param") + MyCommonPool) {
       log("${Thread.currentThread().name} before suspend")
       // 支持一个挂起函数
       val result: String = suspendCoroutine { continuation ->
@@ -137,7 +115,7 @@ class MainActivity : AppCompatActivity() {
       }
       log("${Thread.currentThread().name} after suspend")
       log("${Thread.currentThread().name} result:$result")
-    })
+    }
     log("${Thread.currentThread().name} after continuation")
   }
 
@@ -179,4 +157,18 @@ class MainActivity : AppCompatActivity() {
 
   object MyCommonPool : Pool(ForkJoinPool.commonPool())
 
+  // 自定义一个
+  class StandaloneCoroutine(override val context: CoroutineContext) : Continuation<Unit> {
+    override fun resume(value: Unit) {}
+
+    override fun resumeWithException(exception: Throwable) {
+      //处理异常
+      val currentThread = Thread.currentThread()
+      currentThread.uncaughtExceptionHandler.uncaughtException(currentThread, exception)
+    }
+  }
+
+  // 启动一个协程
+  fun myLaunch(context: CoroutineContext, block: suspend () -> Unit) =
+      block.startCoroutine(StandaloneCoroutine(context))
 }
