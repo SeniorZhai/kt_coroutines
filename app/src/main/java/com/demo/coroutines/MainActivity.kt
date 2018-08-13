@@ -17,6 +17,7 @@ import kotlinx.coroutines.experimental.android.UI
 import kotlinx.coroutines.experimental.async
 import kotlinx.coroutines.experimental.launch
 import kotlinx.coroutines.experimental.withContext
+import java.util.concurrent.Executors
 import kotlin.coroutines.experimental.AbstractCoroutineContextElement
 import kotlin.coroutines.experimental.Continuation
 import kotlin.coroutines.experimental.CoroutineContext
@@ -96,19 +97,23 @@ class MainActivity : AppCompatActivity() {
     }
 
   }
+
   // 自定义一个CoroutineContext
   class ParamContext(val par: String) : AbstractCoroutineContextElement(ParamContext) {
     companion object Key : CoroutineContext.Key<ParamContext>
   }
+
   // 创建一个Continuation并运行
   private fun createContinuation(param: String, block: suspend () -> Unit) {
     val continuation = object : Continuation<Unit> {
       override val context: CoroutineContext
         get() = ParamContext(param)
+
       // 运行后调用
       override fun resume(value: Unit) {
         Log.d("TAG", "value:$value param:${context[ParamContext]!!.par}")
       }
+
       // 运行出错调用
       override fun resumeWithException(exception: Throwable) {
         Log.d("TAG", exception.message)
@@ -123,10 +128,12 @@ class MainActivity : AppCompatActivity() {
       Log.d("TAG", "before suspend")
       // 支持一个挂起函数
       val result: String = suspendCoroutine { continuation ->
-        // 运行耗时函数
-        continuation.resume(calcDoSomething())
+        // 异步运行耗时函数
+        excutor.submit {
+          continuation.resume(calcDoSomething())
+        }
       }
-      Log.d("TAG","after suspend")
+      Log.d("TAG", "after suspend")
       Log.d("TAG", "result:$result")
     })
     Log.d("TAG", "after continuation")
@@ -137,5 +144,10 @@ class MainActivity : AppCompatActivity() {
     Thread.sleep(1000)
     Log.d("TAG", "do something")
     return "result"
+  }
+
+  // 实例化一个线程池
+  private val excutor = Executors.newSingleThreadScheduledExecutor {
+    Thread(it, "scheduler")
   }
 }
