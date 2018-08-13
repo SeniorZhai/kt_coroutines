@@ -2,7 +2,6 @@ package com.demo.coroutines
 
 import android.os.Bundle
 import android.os.Looper
-import android.util.Log
 import androidx.appcompat.app.AppCompatActivity
 import kotlinx.android.synthetic.main.activity_main.bn1
 import kotlinx.android.synthetic.main.activity_main.bn2
@@ -17,9 +16,11 @@ import kotlinx.coroutines.experimental.android.UI
 import kotlinx.coroutines.experimental.async
 import kotlinx.coroutines.experimental.launch
 import kotlinx.coroutines.experimental.withContext
-import java.util.concurrent.Executors
+import java.util.concurrent.ForkJoinPool
+import java.util.concurrent.ForkJoinWorkerThread
 import kotlin.coroutines.experimental.AbstractCoroutineContextElement
 import kotlin.coroutines.experimental.Continuation
+import kotlin.coroutines.experimental.ContinuationInterceptor
 import kotlin.coroutines.experimental.CoroutineContext
 import kotlin.coroutines.experimental.startCoroutine
 import kotlin.coroutines.experimental.suspendCoroutine
@@ -49,15 +50,15 @@ class MainActivity : AppCompatActivity() {
   private fun test() {
     launch(context = UI) {
       val isUIThread = Thread.currentThread() == Looper.getMainLooper().thread
-      println("UI::===$isUIThread")
+      log("${Thread.currentThread().name} UI::===$isUIThread")
     }
     launch(context = CommonPool) {
       val isUIThread = Thread.currentThread() == Looper.getMainLooper().thread
-      println("UI::===$isUIThread")
+      log("${Thread.currentThread().name} UI::===$isUIThread")
     }
     launch(context = Unconfined) {
       val isUIThread = Thread.currentThread() == Looper.getMainLooper().thread
-      println("UI::===$isUIThread")
+      log("${Thread.currentThread().name} UI::===$isUIThread")
     }
   }
 
@@ -70,9 +71,9 @@ class MainActivity : AppCompatActivity() {
 
   private fun joinJob() {
     launch {
-      println("I'm job2")
+      log("${Thread.currentThread().name} I'm job2")
       job1.start()
-      println("Job end")
+      log("${Thread.currentThread().name} Job end")
     }
   }
 
@@ -81,19 +82,19 @@ class MainActivity : AppCompatActivity() {
       "async1"
     }
     async(UI) {
-      println("async2")
-      println(deferred1.await())
+      log("${Thread.currentThread().name} async2")
+      log(deferred1.await())
     }
   }
 
   private fun testWithContext() {
     launch {
-      println("launch")
+      log("${Thread.currentThread().name} launch")
       // 在携程中挂起代码块，并挂起协程直到代码块完成
       withContext(CommonPool, ATOMIC, {
-        println("with context")
+        log("${Thread.currentThread().name} with context")
       })
-      println("job end")
+      log("${Thread.currentThread().name} job end")
     }
 
   }
@@ -107,47 +108,75 @@ class MainActivity : AppCompatActivity() {
   private fun createContinuation(param: String, block: suspend () -> Unit) {
     val continuation = object : Continuation<Unit> {
       override val context: CoroutineContext
-        get() = ParamContext(param)
+        // 上下文通过+组合
+        get() = ParamContext(param) + MyCommonPool
 
       // 运行后调用
       override fun resume(value: Unit) {
-        Log.d("TAG", "value:$value param:${context[ParamContext]!!.par}")
+        log("${Thread.currentThread().name} value:$value param:${context[ParamContext]!!.par}")
       }
 
       // 运行出错调用
       override fun resumeWithException(exception: Throwable) {
-        Log.d("TAG", exception.message)
+        log(exception.message)
       }
     }
+
     block.startCoroutine(continuation)
+
   }
 
   private fun source() {
-    Log.d("TAG", "before continuation")
+    log("${Thread.currentThread().name} before continuation")
     createContinuation("it's param", {
-      Log.d("TAG", "before suspend")
+      log("${Thread.currentThread().name} before suspend")
       // 支持一个挂起函数
       val result: String = suspendCoroutine { continuation ->
         // 异步运行耗时函数
-        excutor.submit {
-          continuation.resume(calcDoSomething())
-        }
+        continuation.resume(calcDoSomething())
       }
-      Log.d("TAG", "after suspend")
-      Log.d("TAG", "result:$result")
+      log("${Thread.currentThread().name} after suspend")
+      log("${Thread.currentThread().name} result:$result")
     })
-    Log.d("TAG", "after continuation")
+    log("${Thread.currentThread().name} after continuation")
   }
 
   // 模拟一个耗时函数
   private fun calcDoSomething(): String {
     Thread.sleep(1000)
-    Log.d("TAG", "do something")
+    log("${Thread.currentThread().name} do something")
     return "result"
   }
 
-  // 实例化一个线程池
-  private val excutor = Executors.newSingleThreadScheduledExecutor {
-    Thread(it, "scheduler")
+  open class Pool(private val pool: ForkJoinPool) : AbstractCoroutineContextElement(
+      ContinuationInterceptor), ContinuationInterceptor {
+    // 拦截Continuation
+    override fun <T> interceptContinuation(continuation: Continuation<T>): Continuation<T> =
+        PoolContinuation(pool, continuation.context.fold(continuation) { cont, element ->
+          if (element != this@Pool && element is ContinuationInterceptor) {
+            element.interceptContinuation(cont)
+          } else {
+            cont
+          }
+        })
   }
+
+  // 自定义一个Continuation
+  private class PoolContinuation<T>(val pool: ForkJoinPool,
+      val continuation: Continuation<T>) : Continuation<T> by continuation {
+    override fun resume(value: T) {
+      if (isPoolThread()) continuation.resume(value)
+      else pool.execute { continuation.resume(value) }
+    }
+
+    override fun resumeWithException(exception: Throwable) {
+      if (isPoolThread()) continuation.resumeWithException(exception)
+      else continuation.resumeWithException(exception)
+    }
+
+    private fun isPoolThread(): Boolean = (Thread.currentThread() as? ForkJoinWorkerThread)?.pool == pool
+  }
+
+  object MyCommonPool : Pool(ForkJoinPool.commonPool())
+
 }
