@@ -8,13 +8,16 @@ import kotlinx.android.synthetic.main.activity_main.bn2
 import kotlinx.android.synthetic.main.activity_main.bn3
 import kotlinx.android.synthetic.main.activity_main.bn4
 import kotlinx.android.synthetic.main.activity_main.bn5
+import kotlinx.android.synthetic.main.activity_main.bn6
 import kotlinx.coroutines.experimental.CommonPool
 import kotlinx.coroutines.experimental.CoroutineStart.ATOMIC
 import kotlinx.coroutines.experimental.CoroutineStart.LAZY
 import kotlinx.coroutines.experimental.Unconfined
 import kotlinx.coroutines.experimental.android.UI
 import kotlinx.coroutines.experimental.async
+import kotlinx.coroutines.experimental.delay
 import kotlinx.coroutines.experimental.launch
+import kotlinx.coroutines.experimental.newSingleThreadContext
 import kotlinx.coroutines.experimental.withContext
 import java.util.concurrent.ForkJoinPool
 import java.util.concurrent.ForkJoinWorkerThread
@@ -44,6 +47,9 @@ class MainActivity : AppCompatActivity() {
     }
     bn5.setOnClickListener {
       source()
+    }
+    bn6.setOnClickListener {
+      bigData()
     }
   }
 
@@ -169,6 +175,15 @@ class MainActivity : AppCompatActivity() {
   }
 
   // 启动一个协程
-  fun myLaunch(context: CoroutineContext, block: suspend () -> Unit) =
+  private fun myLaunch(context: CoroutineContext, block: suspend () -> Unit) =
       block.startCoroutine(StandaloneCoroutine(context))
+
+  private fun bigData() {
+    for (i in 0..100000) {
+      launch(newSingleThreadContext("single")) {
+        delay(1000L)
+        log("$i start ${Thread.currentThread().name}")
+      }
+    }
+  }
 }
